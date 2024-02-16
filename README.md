@@ -29,7 +29,7 @@ Please be aware, that we are developing this integration to best of our knowledg
 
 [![sampleview](https://github.com/marq24/ha-waterkotte/raw/master/sample-view-s.png)](https://github.com/marq24/ha-waterkotte/raw/master/sample-view.png)
 
-[get dashboard sources](https://github.com/marq24/ha-waterkotte/sample-view.yaml)
+[Get the sources for the sampe dashboard_above](https://github.com/marq24/ha-waterkotte/blob/master/sample-view.yaml)
 
 ## Installation
 
