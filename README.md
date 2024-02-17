@@ -1,6 +1,6 @@
 # Home Assistant Integration for Waterkotte Heatpumps [+2020]
 
-![logo](https://github.com/marq24/ha-waterkotte/raw/master/logo.png)
+![logo](https://github.com/marq24/ha-waterkotte-v1/raw/master/logo.png)
 
 This Home Assistant Integration is providing information from the German heatpump pioneer Waterkotte. In addition and where possible functions are provided to control the system.
 
@@ -27,20 +27,20 @@ Please be aware, that we are developing this integration to best of our knowledg
 
 ## What you get [2024.02.15]
 
-[![sampleview](https://github.com/marq24/ha-waterkotte/raw/master/sample-view-s.png)](https://github.com/marq24/ha-waterkotte/raw/master/sample-view.png)
+[![sampleview](https://github.com/marq24/ha-waterkotte-v1/raw/master/sample-view-s.png)](https://github.com/marq24/ha-waterkotte-v1/raw/master/sample-view.png)
 
-[[Get the sources for the sample dashboard_above](https://github.com/marq24/ha-waterkotte/blob/master/sample-view.yaml)]
+[[Get the sources for the sample dashboard_above](https://github.com/marq24/ha-waterkotte-v1/blob/master/sample-view.yaml)]
 
 ## Installation
 
 ### HACS
 
-1. Add a custom integration repository to HACS: [ha-waterkotte](https://github.com/marq24/ha-waterkotte)
+1. Add a custom integration repository to HACS: [ha-waterkotte](https://github.com/marq24/ha-waterkotte-v1)
 1. Install the custom integration
 1. In the HA UI go to "Configuration" -> "Integrations" click "+" and search for "Waterkotte Heatpump [+2020]"
 1. Setup the waterkotte custom integration as described below
 
-  <!--1. In HACS Store, search for [***marq24/ha-waterkotte***]-->
+  <!--1. In HACS Store, search for [***marq24/ha-waterkotte-v1***]-->
 
 ### Manual
 
@@ -140,14 +140,14 @@ Please consider [using my personal Tibber invitation link to join Tibber today](
 [paypal]: https://paypal.me/marq24
 [paypalbadge]: https://img.shields.io/badge/paypal-me-blue.svg?style=for-the-badge&logo=paypal&logoColor=ccc
 
-[commits-shield]: https://img.shields.io/github/commit-activity/y/marq24/ha-waterkotte.svg?style=for-the-badge
-[commits]: https://github.com/marq24/ha-waterkotte/commits/main
+[commits-shield]: https://img.shields.io/github/commit-activity/y/marq24/ha-waterkotte-v1.svg?style=for-the-badge
+[commits]: https://github.com/marq24/ha-waterkotte-v1/commits/main
 [discord]: https://discord.gg/Qa5fW2R
 [discord-shield]: https://img.shields.io/discord/330944238910963714.svg?style=for-the-badge
 [logoimg]: logo.png
 [forum-shield]: https://img.shields.io/badge/community-forum-brightgreen.svg?style=for-the-badge
 [forum]: https://community.home-assistant.io/
-[license-shield]: https://img.shields.io/github/license/marq24/ha-waterkotte.svg?style=for-the-badge
+[license-shield]: https://img.shields.io/github/license/marq24/ha-waterkotte-v1.svg?style=for-the-badge
 [maintenance-shield]: https://img.shields.io/badge/maintainer-%40marq24-blue.svg?style=for-the-badge
-[releases-shield]: https://img.shields.io/github/release/marq24/ha-waterkotte.svg?style=for-the-badge
-[releases]: https://github.com/marq24/ha-waterkotte/releases
+[releases-shield]: https://img.shields.io/github/release/marq24/ha-waterkotte-v1.svg?style=for-the-badge
+[releases]: https://github.com/marq24/ha-waterkotte-v1/releases
