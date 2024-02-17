@@ -1,33 +1,4 @@
 {
-  "config": {
-    "step": {
-      "user": {
-        "description": "Si vous avez besoin d'aide pour la configuration, regardez ici: https://github.com/marq24/ha-waterkotte",
-        "data": {
-          "username": "Identifiant",
-          "password": "Mot de Passe"
-        }
-      }
-    },
-    "error": {
-      "auth": "Identifiant ou mot de passe erroné.",
-      "type": "No connection to Waterkotte possible - are you sure that you have selected the correct System Type?"
-    },
-    "abort": {
-      "single_instance_allowed": "Une seule instance est autorisée."
-    }
-  },
-  "options": {
-    "step": {
-      "user": {
-        "data": {
-          "binary_sensor": "Capteur binaire activé",
-          "sensor": "Capteur activé",
-          "switch": "Interrupteur activé"
-        }
-      }
-    }
-  },
   "entity": {
     "select": {
       "tkey_temperature_heating_mode": {

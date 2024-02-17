@@ -7,7 +7,7 @@ from socket import gethostbyname
 from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
-from homeassistant.helpers.selector import selector
+from homeassistant.helpers import selector
 
 from .const import (
     DOMAIN,
@@ -22,13 +22,12 @@ from .const import (
     CONF_SYSTEMTYPE,
     CONF_HOST,
     CONF_IP,
-    CONF_PASSWORD,
-    CONF_USERNAME,
 )
 
-from .api import WaterkotteHeatpumpApiClient
+from custom_components.waterkotte_heatpump.pywaterkotte_ha import WaterkotteClient
 from custom_components.waterkotte_heatpump.pywaterkotte_ha.const import EASYCON, ECOTOUCH
 from custom_components.waterkotte_heatpump.pywaterkotte_ha.ecotouch import EcotouchTag
+from .pywaterkotte_ha.error import Http404Exception
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
@@ -48,8 +47,6 @@ class WaterkotteHeatpumpFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         self._ID = ""  # pylint: disable=invalid-name
         self._series = ""
         self._serial = ""
-        self._system_type = ""
-        self._tags_per_request = 75
 
     async def async_step_user(self, user_input=None):
         """Handle a flow initialized by the user."""
@@ -60,13 +57,16 @@ class WaterkotteHeatpumpFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         #     return self.async_abort(reason="single_instance_allowed")
 
         if user_input is not None:
+            if CONF_SYSTEMTYPE in user_input:
+                # it really sucks, that translation keys have to be lower case...
+                user_input[CONF_SYSTEMTYPE] = user_input[CONF_SYSTEMTYPE].upper()
+
             valid = await self._test_credentials(
-                user_input[CONF_USERNAME],
-                user_input[CONF_PASSWORD],
                 user_input[CONF_HOST],
                 user_input[CONF_SYSTEMTYPE],
                 user_input[CONF_TAGS_PER_REQUEST],
             )
+
             if valid:
                 user_input[CONF_IP] = self._ip
                 user_input[CONF_BIOS] = self._bios
@@ -74,52 +74,39 @@ class WaterkotteHeatpumpFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 user_input[CONF_SERIES] = self._series
                 user_input[CONF_SERIAL] = self._serial
                 user_input[CONF_ID] = self._ID
-                user_input[CONF_SYSTEMTYPE] = self._system_type
-                user_input[CONF_TAGS_PER_REQUEST] = self._tags_per_request
                 return self.async_create_entry(title=TITLE, data=user_input)
             else:
                 if user_input[CONF_SYSTEMTYPE] == EASYCON:
                     self._errors["base"] = "type"
                 else:
                     self._errors["base"] = "auth"
+        else:
+            user_input = {}
+            user_input[CONF_HOST] = ""
+            user_input[CONF_SYSTEMTYPE] = ECOTOUCH
 
-            return await self._show_config_form(user_input)
-
-        return await self._show_config_form(user_input)
-
-    @staticmethod
-    @callback
-    def async_get_options_flow(config_entry):
-        return WaterkotteHeatpumpOptionsFlowHandler(config_entry)
-
-    async def _show_config_form(self, user_input):  # pylint: disable=unused-argument
-        """Show the configuration form to edit location data."""
+        # it really sucks, that translation keys have to be lower case... so we need to make sure that our
+        # options are all translate to lower case!
         return self.async_show_form(
             step_id="user",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_HOST, default=""): str,
-                    vol.Required(CONF_USERNAME, default="waterkotte"): str,
-                    vol.Required(CONF_PASSWORD, default="waterkotte"): str,
-                    vol.Required(CONF_SYSTEMTYPE, default=ECOTOUCH): selector(
-                        {
-                            "select": {
-                                "options": [
-                                    {"label": "EcoTouch Mode [require Username & Password]", "value": ECOTOUCH},
-                                    {"label": "EasyCon Mode [older Waterkotte Models without login credentials]", "value": EASYCON},
-                                ],
-                                "mode": "dropdown",
-                            }
-                        }
+            data_schema=vol.Schema({
+                vol.Required(CONF_HOST, default=user_input.get(CONF_HOST)): str,
+                vol.Required(CONF_SYSTEMTYPE, default=(user_input.get(CONF_SYSTEMTYPE, ECOTOUCH)).lower()):
+                    selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=[ECOTOUCH.lower(), EASYCON.lower()],
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                            translation_key=CONF_SYSTEMTYPE
+                        )
                     ),
-                    vol.Required(CONF_TAGS_PER_REQUEST, default=75): int,
-                }
-            ),
-            errors=self._errors,
+                vol.Required(CONF_POLLING_INTERVAL, default=60): int,
+                vol.Required(CONF_TAGS_PER_REQUEST, default=75): int,
+            }),
+            last_step=True,
+            errors=self._errors
         )
 
-    async def _test_credentials(self, username, password, host, system_type, tags_per_request):
-        """Return true if credentials is valid."""
+    async def _test_credentials(self, host, system_type, tags_per_request):
         try:
             hasPort = host.find(":")
             _LOGGER.debug(f"host entered: {host} has port? {hasPort}")
@@ -130,21 +117,18 @@ class WaterkotteHeatpumpFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
 
             _LOGGER.debug(f"ip detected: {self._ip}")
             session = async_create_clientsession(self.hass)
-            client = WaterkotteHeatpumpApiClient(
+            client = WaterkotteClient(
                 host=host,
-                username=username,
-                password=password,
-                session=session,
+                system_type=system_type,
+                web_session=session,
                 tags=None,
-                systemType=system_type,
-                tagsPerRequest=tags_per_request,
+                tags_per_request=tags_per_request,
                 lang=self.hass.config.language.lower()
             )
             await client.login()
             init_tags = [
                 EcotouchTag.VERSION_BIOS,
                 EcotouchTag.VERSION_CONTROLLER,
-                # EcotouchTag.VERSION_CONTROLLER_BUILD,
                 EcotouchTag.INFO_ID,
                 EcotouchTag.INFO_SERIAL,
                 EcotouchTag.INFO_SERIES,
@@ -155,22 +139,23 @@ class WaterkotteHeatpumpFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             self._ID = str(ret[EcotouchTag.INFO_ID]["value"])
             self._series = str(ret[EcotouchTag.INFO_SERIES]["value"])
             self._serial = str(ret[EcotouchTag.INFO_SERIAL]["value"])
-            self._system_type = system_type
-            self._tags_per_request = tags_per_request
             _LOGGER.info(f"successfully validated login -> result: {ret}")
             return True
 
-        except Exception as exec:  # pylint: disable=broad-except
-            if isinstance(exec, FileNotFoundError):
+        except Exception as exc:
+            if isinstance(exc, Http404Exception):
                 _LOGGER.error(f"EASYCON Mode caused HTTP 404")
             else:
-                _LOGGER.error(f"Exception while test credentials: {exec}")
+                _LOGGER.error(f"Exception while test credentials: {exc}")
         return False
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry):
+        return WaterkotteHeatpumpOptionsFlowHandler(config_entry)
 
 
 class WaterkotteHeatpumpOptionsFlowHandler(config_entries.OptionsFlow):
-    """Config flow options handler for waterkotte_heatpump."""
-
     def __init__(self, config_entry):
         """Initialize HACS options flow."""
         self.config_entry = config_entry
@@ -189,35 +174,10 @@ class WaterkotteHeatpumpOptionsFlowHandler(config_entries.OptionsFlow):
             self.options.update(user_input)
             return await self._update_options()
 
-        dataSchema = vol.Schema(
-            {
-                vol.Required(
-                    CONF_POLLING_INTERVAL, default=self.options.get(CONF_POLLING_INTERVAL, 60),
-                ): int,  # pylint: disable=line-too-long
-                vol.Required(
-                    CONF_TAGS_PER_REQUEST, default=self.options.get(CONF_TAGS_PER_REQUEST, 75),
-                ): int,  # pylint: disable=line-too-long
-                vol.Required(
-                    CONF_USERNAME, default=self.options.get(CONF_USERNAME)
-                ): str,
-                vol.Required(
-                    CONF_PASSWORD, default=self.options.get(CONF_USERNAME)
-                ): str,
-                vol.Required(
-                    CONF_SYSTEMTYPE, default=self.options.get(CONF_SYSTEMTYPE)
-                ): selector(
-                    {
-                        "select": {
-                            "options": [
-                                {"label": "EcoTouch Mode", "value": ECOTOUCH},
-                                {"label": "EasyCon Mode", "value": EASYCON},
-                            ],
-                            "mode": "dropdown",
-                        }
-                    }
-                ),
-            }
-        )
+        dataSchema = vol.Schema({
+            vol.Required(CONF_POLLING_INTERVAL, default=self.options.get(CONF_POLLING_INTERVAL, 60)): int,
+            vol.Required(CONF_TAGS_PER_REQUEST, default=self.options.get(CONF_TAGS_PER_REQUEST, 75)): int
+        })
 
         return self.async_show_form(
             step_id="user",
@@ -225,5 +185,4 @@ class WaterkotteHeatpumpOptionsFlowHandler(config_entries.OptionsFlow):
         )
 
     async def _update_options(self):
-        """Update config entry options."""
         return self.async_create_entry(title=TITLE, data=self.options)

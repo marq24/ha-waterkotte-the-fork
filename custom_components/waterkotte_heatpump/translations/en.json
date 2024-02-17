@@ -1,21 +1,27 @@
 {
+  "selector": {
+    "system_type": {
+      "options": {
+        "ecotouch": "EcoTouch Mode [web interface require username & password]",
+        "easycon": "EasyCon Mode [older Waterkotte Models without login credentials]"
+      }
+    }
+  },
   "config": {
     "step": {
       "user": {
         "description": "If you need help with the configuration have a look here: https://github.com/marq24/ha-waterkotte",
         "data": {
-          "username": "Username",
-          "password": "Password",
-          "host": "Host or IP",
+          "host": "Host or IP of your Waterkotte",
+          "system_type": "Interface-Type",
           "polling_interval": "Polling Interval in seconds",
-          "tags_per_request": "Number of tags to fetch in a single request (max. 75)",
-          "system_type": "System Type"
+          "tags_per_request": "Number of tags to fetch in a single request (max. 75)"
         }
       }
     },
     "error": {
-      "auth": "Username/Password is wrong.",
-      "type": "No connection to Waterkotte possible - are you sure that you have selected the correct System Type?"
+      "auth": "Host/IP is wrong - could not reach system",
+      "type": "No connection to Waterkotte possible - are you sure that you have selected the correct Interface-Type?"
     },
     "abort": {
       "single_instance_allowed": "Only a single instance is allowed."
@@ -26,13 +32,8 @@
       "user": {
         "description": "If you need help with the configuration have a look here: https://github.com/marq24/ha-waterkotte",
         "data": {
-          "binary_sensor": "Binary sensor enabled",
-          "username": "Username",
-          "password": "Password",
-          "host": "Host or IP",
           "polling_interval": "Polling Interval in seconds",
-          "tags_per_request": "Number of tags to fetch in a single request (max. 75)",
-          "system_type": "System Type"
+          "tags_per_request": "Number of tags to fetch in a single request (max. 75)"
         }
       }
     }

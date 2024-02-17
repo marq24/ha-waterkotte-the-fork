@@ -3,27 +3,23 @@ Custom integration to integrate Waterkotte Heatpump with Home Assistant.
 """
 import asyncio
 import logging
+import json
 
 from datetime import timedelta
 from typing import List, Sequence
-
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
-from homeassistant.core import Config, SupportsResponse
+from homeassistant.core import Config, SupportsResponse, Event
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.entity import Entity, EntityDescription
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.helpers.update_coordinator import UpdateFailed
-from homeassistant.helpers import device_registry as DeviceReg
 from homeassistant.helpers import entity_registry as EntityReg
-from custom_components.waterkotte_heatpump.pywaterkotte_ha.ecotouch import EcotouchTag, TooManyUsersException
-from .api import WaterkotteHeatpumpApiClient
 
 from .const import (
     CONF_IP, CONF_BIOS, CONF_FW, CONF_SERIAL, CONF_SERIES, CONF_ID,
     CONF_HOST,
-    CONF_PASSWORD,
-    CONF_USERNAME,
     CONF_POLLING_INTERVAL,
     CONF_TAGS_PER_REQUEST,
     CONF_SYSTEMTYPE,
@@ -31,142 +27,97 @@ from .const import (
     PLATFORMS,
     NAME,
     STARTUP_MESSAGE,
+    SERVICE_SET_HOLIDAY,
+    SERVICE_SET_DISINFECTION_START_TIME,
+    SERVICE_GET_ENERGY_BALANCE,
+    SERVICE_GET_ENERGY_BALANCE_MONTHLY
 )
 
 from . import service as waterkotteservice
+from custom_components.waterkotte_heatpump.pywaterkotte_ha.ecotouch import EcotouchTag
+from custom_components.waterkotte_heatpump.pywaterkotte_ha import WaterkotteClient, TooManyUsersException
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 SCAN_INTERVAL = timedelta(seconds=60)
-COORDINATOR = None
 tags = []
 
 
-async def async_setup(
-        hass: HomeAssistant, config: Config
-):  # pylint: disable=unused-argument
+async def async_setup(hass: HomeAssistant, config: Config):  # pylint: disable=unused-argument
     """Set up this integration using YAML is not supported."""
     return True
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
-    """Set up this integration using UI."""
-    global SCAN_INTERVAL  # pylint: disable=global-statement
-    global COORDINATOR  # pylint: disable=global-statement
-    if hass.data.get(DOMAIN) is None:
-        hass.data.setdefault(DOMAIN, {})
+async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
+    if DOMAIN not in hass.data:
+        value = "UNKOWN"
+        try:
+            basepath = __file__[:-11]
+            with open(f"{basepath}manifest.json") as f:
+                manifest = json.load(f)
+                value = manifest["version"]
+        except:
+            pass
         _LOGGER.info(STARTUP_MESSAGE)
+        hass.data.setdefault(DOMAIN, {"manifest_version": value})
 
-    # Setup Device
-    fw = entry.options.get(CONF_IP, entry.data.get(CONF_IP))
-    bios = entry.options.get(CONF_BIOS, entry.data.get(CONF_BIOS))
-
-    device_registry = DeviceReg.async_get(hass)
-
-    device_registry.async_get_or_create(  # pylint: disable=invalid-name
-        config_entry_id=entry.entry_id,
-        identifiers={
-            ("DOMAIN", DOMAIN),
-            ("IP", entry.options.get(CONF_IP, entry.data.get(CONF_IP))),
-        },
-        manufacturer=NAME,
-        suggested_area="Basement",
-        name=NAME,
-        model=entry.options.get(CONF_SERIES, entry.data.get(CONF_SERIES)),
-        sw_version=f"{fw} BIOS: {bios}",
-        hw_version=entry.options.get(CONF_ID, entry.data.get(CONF_ID)),
-    )
-
-    # device = DeviceInfo(
-    #     id=deviceEntry.id,
-    #     identifiers=deviceEntry.identifiers,
-    #     name=deviceEntry.name,
-    #     manufacturer=deviceEntry.manufacturer,
-    #     model=deviceEntry.model,
-    #     sw_version=deviceEntry.sw_version,
-    #     suggested_area=deviceEntry.suggested_area,
-    #     hw_version=deviceEntry.hw_version,
-    # )
-
-    username = entry.options.get(CONF_USERNAME, entry.data.get(CONF_USERNAME))
-    password = entry.options.get(CONF_PASSWORD, entry.data.get(CONF_PASSWORD))
-    host = entry.options.get(CONF_HOST, entry.data.get(CONF_HOST))
-    system_type = entry.options.get(CONF_SYSTEMTYPE, entry.data.get(CONF_SYSTEMTYPE))
-    SCAN_INTERVAL = timedelta(seconds=entry.options.get(CONF_POLLING_INTERVAL, 60))
-    tags_per_request = entry.options.get(CONF_TAGS_PER_REQUEST, entry.data.get(CONF_TAGS_PER_REQUEST))
-    if tags_per_request is None:
-        tags_per_request = 10
-
-    session = async_get_clientsession(hass)
-    client = WaterkotteHeatpumpApiClient(
-        host=host,
-        username=username,
-        password=password,
-        session=session,
-        tags=tags,
-        systemType=system_type,
-        tagsPerRequest=tags_per_request,
-        lang=hass.config.language.lower()
-    )
-    if COORDINATOR is not None:
-        coordinator = WaterkotteHeatpumpDataUpdateCoordinator(
-            hass,
-            client=client,
-            config_entry=entry,
-            data=COORDINATOR.data
-        )
-    else:
-        coordinator = WaterkotteHeatpumpDataUpdateCoordinator(
-            hass,
-            config_entry=entry,
-            client=client
-        )
-
+    coordinator = WKHPDataUpdateCoordinator(hass, config_entry)
+    await coordinator.async_refresh()
     if not coordinator.last_update_success:
         raise ConfigEntryNotReady
 
-    hass.data[DOMAIN][entry.entry_id] = coordinator
+    hass.data[DOMAIN][config_entry.entry_id] = coordinator
 
     for platform in PLATFORMS:
-        hass.async_create_task(hass.config_entries.async_forward_entry_setup(entry, platform))
+        hass.async_create_task(hass.config_entries.async_forward_entry_setup(config_entry, platform))
 
-    if entry.state != ConfigEntryState.LOADED:
-        entry.add_update_listener(async_reload_entry)
+    if config_entry.state != ConfigEntryState.LOADED:
+        config_entry.add_update_listener(async_reload_entry)
 
-    # after all sensors for the different platforms have been registered we can create the list
-    # of all active tags - so that we only query the information from the heatpump that is currently
-    # active in HA
-    client.tags = generate_tag_list(hass, entry.entry_id)
-    if len(client.tags) == 0:
-        asyncio.create_task(update_client_tag_list(coordinator, client, hass, entry.entry_id))
-    else:
-        asyncio.create_task(update_data(coordinator, do_sleep=True))
-
-    COORDINATOR = coordinator
-
-    service = waterkotteservice.WaterkotteHeatpumpService(hass, entry, coordinator)
-    hass.services.async_register(DOMAIN, "set_holiday", service.set_holiday)
-    hass.services.async_register(DOMAIN, "set_disinfection_start_time", service.set_disinfection_start_time)
-    hass.services.async_register(DOMAIN, "get_energy_balance", service.get_energy_balance,
+    service = waterkotteservice.WaterkotteHeatpumpService(hass, config_entry, coordinator)
+    hass.services.async_register(DOMAIN, SERVICE_SET_HOLIDAY, service.set_holiday,
+                                 supports_response=SupportsResponse.OPTIONAL)
+    hass.services.async_register(DOMAIN, SERVICE_SET_DISINFECTION_START_TIME, service.set_disinfection_start_time,
+                                 supports_response=SupportsResponse.OPTIONAL)
+    hass.services.async_register(DOMAIN, SERVICE_GET_ENERGY_BALANCE, service.get_energy_balance,
                                  supports_response=SupportsResponse.ONLY)
-    hass.services.async_register(DOMAIN, "get_energy_balance_monthly", service.get_energy_balance_monthly,
+    hass.services.async_register(DOMAIN, SERVICE_GET_ENERGY_BALANCE_MONTHLY, service.get_energy_balance_monthly,
                                  supports_response=SupportsResponse.ONLY)
 
+    # we should check (in any CASE!) if the active tags might have...
+    asyncio.create_task(coordinator.update_client_tag_list(hass, config_entry.entry_id))
+
+    # ok we are done...
     return True
 
-async def update_client_tag_list(coordinator, client, hass, entry_id):
-    _LOGGER.debug(f"rechecking tags... in 15sec")
-    await asyncio.sleep(15)
-    client.tags = generate_tag_list(hass, entry_id)
-    asyncio.create_task(update_data(coordinator, do_sleep=False))
 
-async def update_data(coordinator, do_sleep:bool):
+async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
+    unload_ok = all(await asyncio.gather(*[
+        hass.config_entries.async_forward_entry_unload(config_entry, platform)
+        for platform in PLATFORMS
+    ]))
 
-    if do_sleep:
-        _LOGGER.debug(f"update_data in 5sec")
-        await asyncio.sleep(5)
-    else:
-        _LOGGER.debug(f"update_data now")
-    await coordinator.async_refresh()
+    if unload_ok:
+        if DOMAIN in hass.data and config_entry.entry_id in hass.data[DOMAIN]:
+            # even if waterkotte does not support logout... I code it here...
+            coordinator = hass.data[DOMAIN][config_entry.entry_id]
+            await coordinator.bridge._internal_client.logout()
+
+            hass.data[DOMAIN].pop(config_entry.entry_id)
+
+        hass.services.async_remove(DOMAIN, SERVICE_SET_HOLIDAY)
+        hass.services.async_remove(DOMAIN, SERVICE_SET_DISINFECTION_START_TIME)
+        hass.services.async_remove(DOMAIN, SERVICE_GET_ENERGY_BALANCE)
+        hass.services.async_remove(DOMAIN, SERVICE_GET_ENERGY_BALANCE_MONTHLY)
+
+    return unload_ok
+
+
+async def async_reload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> None:
+    """Reload config entry."""
+    if await async_unload_entry(hass, config_entry):
+        await asyncio.sleep(2)
+        await async_setup_entry(hass, config_entry)
+
 
 @staticmethod
 def generate_tag_list(hass: HomeAssistant, config_entry_id: str) -> List[EcotouchTag]:
@@ -190,35 +141,64 @@ def generate_tag_list(hass: HomeAssistant, config_entry_id: str) -> List[Ecotouc
     return tags
 
 
-class WaterkotteHeatpumpDataUpdateCoordinator(DataUpdateCoordinator):
-    """Class to manage fetching data from the API."""
+class WKHPDataUpdateCoordinator(DataUpdateCoordinator):
+    def __init__(self, hass: HomeAssistant, config_entry):
+        self.name = config_entry.title
+        self._config_entry = config_entry
+        self._host = config_entry.options.get(CONF_HOST, config_entry.data[CONF_HOST])
+        system_type = config_entry.options.get(CONF_SYSTEMTYPE, config_entry.data.get(CONF_SYSTEMTYPE))
+        tags_per_request = config_entry.options.get(CONF_TAGS_PER_REQUEST,
+                                                    config_entry.data.get(CONF_TAGS_PER_REQUEST, 10))
 
-    def __init__(
-            self,
-            hass: HomeAssistant,
-            client: WaterkotteHeatpumpApiClient,
-            config_entry: ConfigEntry = None,
-            data=None
-    ) -> None:
-        """Initialize."""
-        self.api = client
-        if config_entry is not None:
-            self._config_entry = config_entry
+        tags = generate_tag_list(hass=hass, config_entry_id=config_entry.entry_id)
 
-        if data is None:
-            self.data = {}
-        else:
-            self.data = data
+        self.bridge = WaterkotteClient(host=self._host, system_type=system_type,
+                                       web_session=async_get_clientsession(hass), tags=tags,
+                                       tags_per_request=tags_per_request, lang=hass.config.language.lower())
 
-        self.__hass = hass
+        global SCAN_INTERVAL
+        # update_interval can be adjusted in the options (not for WebAPI)
+        SCAN_INTERVAL = timedelta(seconds=config_entry.options.get(CONF_POLLING_INTERVAL,
+                                                                   config_entry.data.get(CONF_POLLING_INTERVAL, 60)))
+
+        fw = config_entry.options.get(CONF_IP, config_entry.data.get(CONF_IP))
+        bios = config_entry.options.get(CONF_BIOS, config_entry.data.get(CONF_BIOS))
+        self._device_info_dict = {
+            "identifiers": {
+                ("DOMAIN", DOMAIN),
+                ("IP", config_entry.options.get(CONF_IP, config_entry.data.get(CONF_IP))),
+            },
+            "manufacturer": NAME,
+            "suggested_area": "Basement",
+            "name": NAME,
+            "model": config_entry.options.get(CONF_SERIES, config_entry.data.get(CONF_SERIES)),
+            "sw_version": f"{fw} BIOS: {bios}",
+            "hw_version": config_entry.options.get(CONF_ID, config_entry.data.get(CONF_ID))
+        }
+
         super().__init__(hass, _LOGGER, name=DOMAIN, update_interval=SCAN_INTERVAL)
+
+    async def update_client_tag_list(self, hass, entry_id):
+        _LOGGER.debug(f"rechecking active tags... in 15sec")
+        await asyncio.sleep(15)
+
+        _LOGGER.debug(f"rechecking active tags NOW!")
+        self.bridge.tags = generate_tag_list(hass, entry_id)
+
+        _LOGGER.debug(f"active tags checked... now refresh sensor data")
+        await self.async_refresh()
+
+    # Callable[[Event], Any]
+    def __call__(self, evt: Event) -> bool:
+        _LOGGER.debug(f"Event arrived: {evt}")
+        return True
 
     async def _async_update_data(self):
         """Update data via library."""
         try:
-            await self.api.login()
-            _LOGGER.info(f"number of entities to query: {len(self.api.tags)} (1 entity can consist of n-tags)")
-            result = await self.api.async_get_data()
+            await self.bridge.login()
+            _LOGGER.info(f"number of entities to query: {len(self.bridge.tags)} (1 entity can consist of n-tags)")
+            result = await self.bridge.async_get_data()
             _LOGGER.info(f"number of entity values read: {len(result)}")
 
             if self.data is None:
@@ -227,6 +207,7 @@ class WaterkotteHeatpumpDataUpdateCoordinator(DataUpdateCoordinator):
             for a_tag_in_result in result:
                 if result[a_tag_in_result]["status"] == "S_OK":
                     self.data[a_tag_in_result] = result[a_tag_in_result]
+
             return self.data
 
         except UpdateFailed as exception:
@@ -236,39 +217,69 @@ class WaterkotteHeatpumpDataUpdateCoordinator(DataUpdateCoordinator):
             await asyncio.sleep(30)
             raise UpdateFailed() from too_many_users
 
-    async def async_write_tag(self, tag: EcotouchTag, value):
+    async def async_read_values(self, tags: Sequence[EcotouchTag]) -> dict:
+        """Get data from the API."""
+        ret = await self.bridge.async_read_values(tags)
+        return ret
+
+    async def async_write_tag(self, tag: EcotouchTag, value, entity: Entity = None):
         """Update single data"""
-        result = await self.api.async_write_value(tag, value)
-        # print(res)
+        result = await self.bridge.async_write_value(tag, value)
+        _LOGGER.debug(f"write result: {result}")
+
         if tag in result:
             self.data[tag] = result[tag]
         else:
             _LOGGER.error(f"could not write value: '{value}' to: {tag} result was: {result}")
-        # self.data[result[0]]
 
-    async def async_read_values(self, tags: Sequence[EcotouchTag]) -> dict:
-        """Get data from the API."""
-        ret = await self.api.async_read_values(tags)
-        return ret
+        # after we have written something to the Waterkotte we should force an update of the data...
+        if entity is not None:
+            entity.async_schedule_update_ha_state(force_refresh=True)
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Handle removal of an entry."""
-    coordinator = hass.data[DOMAIN][entry.entry_id]
+class WKHPBaseEntity(Entity):
+    _attr_should_poll = False
+    _attr_has_entity_name = True
 
-    unloaded = all(await asyncio.gather(*[
-        hass.config_entries.async_forward_entry_unload(entry, platform)
-        for platform in PLATFORMS
-    ]))
-    if unloaded:
-        if DOMAIN in hass.data and entry.entry_id in hass.data[DOMAIN]:
-            hass.data[DOMAIN].pop(entry.entry_id)
+    def __init__(self, coordinator: WKHPDataUpdateCoordinator, description: EntityDescription) -> None:
+        self._attr_translation_key = description.key.lower()
 
-    await coordinator.api._client.logout()
-    return unloaded
+        self.coordinator = coordinator
+        self.entity_description = description
+        self.entity_id = f"{DOMAIN}.wkh_{self._attr_translation_key}"
 
+    @property
+    def eco_tag(self):
+        """Return a unique ID to use for this entity."""
+        return self.entity_description.tag
 
-async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Reload config entry."""
-    await async_unload_entry(hass, entry)
-    await async_setup_entry(hass, entry)
+    @property
+    def device_info(self) -> dict:
+        return self.coordinator._device_info_dict
+
+    @property
+    def available(self):
+        """Return True if entity is available."""
+        return self.coordinator.last_update_success
+
+    @property
+    def unique_id(self):
+        """Return a unique ID to use for this entity."""
+        # sensor_key = self.entity_description.key
+        # device_key = self.coordinator.config_entry.data[CONF_SERIAL]
+        # return f"{device_key}_{sensor}"
+
+        return self.entity_description.key
+
+    async def async_added_to_hass(self):
+        """Connect to dispatcher listening for entity data notifications."""
+        self.async_on_remove(self.coordinator.async_add_listener(self.async_write_ha_state))
+
+    async def async_update(self):
+        """Update entity."""
+        await self.coordinator.async_request_refresh()
+
+    @property
+    def should_poll(self) -> bool:
+        """Entities do not individually poll."""
+        return False

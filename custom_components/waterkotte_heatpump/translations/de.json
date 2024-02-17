@@ -1,4 +1,68 @@
 {
+  "selector": {
+    "system_type": {
+      "options": {
+        "ecotouch": "EcoTouch Modus [es werden Zugangsdaten zur Anmeldung benötigt]",
+        "easycon": "EasyCon Modus [älter Waterkotte Modelle (ohne Zugangsdaten)]"
+      }
+    }
+  },
+  "config": {
+    "step": {
+      "user": {
+        "description": "Wenn Du Hilfe benötigst, findest du sie hier: https://github.com/marq24/ha-waterkotte",
+        "data": {
+          "host": "IP oder Hostname deiner Waterkotte",
+          "system_type": "Watterkotte Interface-Type",
+          "polling_interval": "Aktualisierungsintervall in Sekunden",
+          "tags_per_request": "Anzahl von TAGS die gleichzeitig angefordert werden (max. 75)"
+        }
+      }
+    },
+    "error": {
+      "auth": "Unter dieser IP/Host konnte keine Waterkotte erreicht werden",
+      "type": "Es konnte keine Verbindung mit deiner Waterkotte hergestellt werden - bist du dir sicher, dass du den richtigen Interface-Type ausgewählt hast?"
+    },
+    "abort": {
+      "single_instance_allowed": "Only a single instance is allowed."
+    }
+  },
+  "options": {
+    "step": {
+      "user": {
+        "description": "Wenn Du Hilfe benötigst, findest du sie hier: https://github.com/marq24/ha-waterkotte",
+        "data": {
+          "polling_interval": "Aktualisierungsintervall in Sekunden",
+          "tags_per_request": "Anzahl von TAGS die gleichzeitig angefordert werden (max. 75)"
+        }
+      }
+    }
+  },
+  "services": {
+    "set_holiday": {
+      "name": "Urlaubszeitraum setzen",
+      "description": "Setzt den Start- & Endzeitpunkt des Urlaubsmodus",
+      "fields": {
+        "start": {"name": "Start Zeit & Datum",  "description": "Urlaub beginnt am/um"},
+        "end": {"name": "Ende Zeit & Datum", "description": "Urlaub ended am/um"}
+      }
+    },
+    "set_disinfection_start_time": {
+      "name": "Startzeit des Desinfektionslauf",
+      "description": "Setze die Uhrzeit an dem der Desinfektionslauf an den ausgewählten Tagen startet",
+      "fields": {
+        "starthhmm": {"name": "Startzeit", "description": "Startzeit des Desinfektionslauf"}
+      }
+    },
+    "get_energy_balance": {
+      "name": "Energiebilanz des laufenden Jahres ermitten",
+      "description": "Ermittele die Energiebilanz nach unterschiedlichen Verbrauchern für das laufende Jahr"
+    },
+    "get_energy_balance_monthly":{
+      "name": "Energiebilanz der letzten 12 Monate im Detail ermitten",
+      "description": "Ermittele die Energiebilanz nach unterschiedlichen Verbrauchern in einem Fenster der letzten 12 Monate"
+    }
+  },
   "entity": {
     "binary_sensor": {
       "state_sourcepump": {"name": "Quellenpumpe"},

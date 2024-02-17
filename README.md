@@ -27,7 +27,7 @@ Please be aware, that we are developing this integration to best of our knowledg
 
 [![sampleview](https://github.com/marq24/ha-waterkotte/raw/main/sample-view-s.png)](https://github.com/marq24/ha-waterkotte/raw/main/sample-view.png)
 
-[[Get the sources for the sample dashboard_above](https://github.com/marq24/ha-waterkotte/blob/main/sample-view.yaml)]
+[[Get the sources for the sample dashboard_above](https://github.com/marq24/ha-waterkotte/blob/main/sample-view.yaml)] - Please note, that this sample dashboard makes use of the custom [multiple-entity-row](https://github.com/benct/lovelace-multiple-entity-row) frontend integration that need to be installed separately. 
 
 ## Installation
 
@@ -63,7 +63,8 @@ Just click the following Button to start the configuration automatically:
 Use the following steps for a manual configuration by adding the custom integration using the web interface and follow instruction on screen:
 
 - Go to `Configuration -> Integrations` and add "Waterkotte" integration
-- Provide display name for the device, and it's address (hostname or IP)
+- Provide the IP address (or hostname) of your Waterkotte Heatpump web server
+- Select the Interface-Type of your Waterkotte (when you need to provide the user & password 'waterkotte' to login via your app/browser, then select `EcoTouch Mode`)
 - Select the number of TAGs that can be fetched in a single call to your device (older devices might need to adjust this value - for my in 2022 installed Waterkotte 75 is totally fine)
 - Provide area where the heatpump is located
 
@@ -99,11 +100,11 @@ The Integration provides currently 4 services:
 
 ### Sessions
 
-The Heatpump only allows 2 sessions and there is not way to close a session. Sometimes you will get an error about the login. Just wait a few minutes and it should auto correct itself. Session usually time out within about 5 min.
+The Heatpump only allows 2 sessions and there is no way to close a session. Sometimes you will get an error about the login. Just wait a few minutes and it should autocorrect itself. Session usually time out within about 5 min.
 
 ### Stale Data
 
-The Heatpump will not always respond with data. This happens usually after the system changes status, e.g. start/stop the heating. There is not much we can do about this unfortunately. I try to cache the data in possible for a better UX.
+The Heatpump will not always respond with data. This happens usually after the system changes status, e.g. start/stop the heating. There is not much we can do about this, unfortunately. I try to cache the data in possible for a better UX.
 
 ## Credits
 

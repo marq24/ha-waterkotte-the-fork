@@ -1,40 +1,254 @@
 """ ecotouch main module"""
-import aiohttp
-import re
 import logging
+import math
+import struct
+from datetime import timedelta, time
 
 from enum import Enum
+
 from datetime import datetime
 
 from typing import (
-    Any,
-    Sequence,
-    Tuple,
+    NamedTuple,
+    Callable,
     List,
     Collection
 )
 
-from custom_components.waterkotte_heatpump.pywaterkotte_ha import TagData, InvalidValueException
-from custom_components.waterkotte_heatpump.pywaterkotte_ha.const import TRANSLATIONS
+from custom_components.waterkotte_heatpump.pywaterkotte_ha.const import (
+    SERIES,
+    SYSTEM_IDS,
+    HEATING_MODES
+)
+
+from custom_components.waterkotte_heatpump.pywaterkotte_ha.error import (
+    InvalidValueException,
+)
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
 
-class InvalidResponseException(Exception):
-    """A InvalidResponseException."""
+class TagData(NamedTuple):
 
-    # pass
+    def _decode_value_default(self, str_vals: List[str], *other_args):
+        first_val = str_vals[0]
+        if first_val is None:
+            # do not check any further if for what ever reason the first value of the str_vals is None
+            return None
 
+        first_tag = self.tags[0]
+        assert first_tag[0] in ["A", "I", "D"]
 
-class StatusException(Exception):
-    """A Status Exception."""
+        if first_tag[0] == "A":
+            if len(self.tags) == 1:
+                return float(first_val) / 10.0
+            else:
+                ivals = [int(xxl) & 0xFFFF for xxl in str_vals]
+                hex_string = f"{ivals[0]:04x}{ivals[1]:04x}"
+                return struct.unpack("!f", bytes.fromhex(hex_string))[0]
 
-    # pass
+        else:
+            assert len(self.tags) == 1
+            if first_tag[0] == "I":
+                # single bit field
+                if self.bit is not None:
+                    return (int(first_val) & (1 << self.bit)) > 0
 
+                # a bit array?
+                elif self.bits is not None:
+                    ret = [False] * len(self.bits)
+                    for idx in range(len(self.bits)):
+                        ret[idx] = (int(first_val) & (1 << self.bits[idx])) > 0
+                    # _LOGGER.debug(f"BITS: {first_tag} ({first_val}) -> {ret}")
+                    return ret
 
-class TooManyUsersException(StatusException):
-    """A TooManyUsers Exception."""
-    # pass
+                # default implementation
+                else:
+                    return int(first_val)
+
+            elif first_tag[0] == "D":
+                if first_val == "1":
+                    return True
+                elif first_val == "0":
+                    return False
+            else:
+                raise InvalidValueException(
+                    # "%s is not a valid value for %s" % (val, ecotouch_tag)
+                    f"{first_val} is not a valid value for {first_tag}"
+                )
+
+        return None
+
+    def _encode_value_default(self, value, encoded_values):
+        assert len(self.tags) == 1
+        ecotouch_tag = self.tags[0]
+        assert ecotouch_tag[0] in ["A", "I", "D"]
+
+        if ecotouch_tag[0] == "I":
+            assert isinstance(value, int)
+            encoded_values[ecotouch_tag] = str(value)
+        elif ecotouch_tag[0] == "D":
+            assert isinstance(value, bool)
+            encoded_values[ecotouch_tag] = "1" if value else "0"
+        elif ecotouch_tag[0] == "A":
+            assert isinstance(value, float)
+            encoded_values[ecotouch_tag] = str(int(value * 10))
+
+    def _decode_datetime(self, str_vals: List[str], *other_args):  # pylint: disable=unused-argument
+        int_vals = list(map(int, str_vals))
+        int_vals[0] = int_vals[0] + 2000
+        next_day = False
+        if int_vals[3] == 24:
+            int_vals[3] = 0
+            next_day = True
+
+        dt_val = datetime(*int_vals)
+        return dt_val + timedelta(days=1) if next_day else dt_val
+
+    def _encode_datetime(self, value, encoded_values):
+        assert isinstance(value, datetime)
+        vals = [
+            str(val)
+            for val in [
+                value.year % 100,
+                value.month,
+                value.day,
+                value.hour,
+                value.minute,
+                value.second,
+            ]
+        ]
+        # check if result is the same
+        # for i in range(len(tag.tags)):
+        #     et_values[tag.tags[i]] = vals[i]
+        for i, tags in enumerate(self.tags):
+            encoded_values[tags] = vals[i]
+
+    def _decode_time_hhmm(self, str_vals: List[str], *other_args):  # pylint: disable=unused-argument
+        int_vals = list(map(int, str_vals))
+        dt = time(hour=int_vals[0], minute=int_vals[1])
+        return dt
+
+    def _encode_time_hhmm(self, value, encoded_values):
+        assert isinstance(value, time)
+        vals = [
+            str(val)
+            for val in [
+                value.hour,
+                value.minute,
+            ]
+        ]
+        for i, tags in enumerate(self.tags):
+            encoded_values[tags] = vals[i]
+
+    def _decode_state(self, str_vals: List[str], *other_args):  # pylint: disable=unused-argument
+        assert len(self.tags) == 1
+        if str_vals[0] == "0":
+            return "off"
+        elif str_vals[0] == "1":
+            return "auto"
+        elif str_vals[0] == "2":
+            return "manual"
+        else:
+            return "Error"
+
+    def _encode_state(self, value, encoded_values):
+        assert len(self.tags) == 1
+        ecotouch_tag = self.tags[0]
+        assert ecotouch_tag[0] in ["I"]
+        if value == "off":
+            encoded_values[ecotouch_tag] = "0"
+        elif value == "auto":
+            encoded_values[ecotouch_tag] = "1"
+        elif value == "manual":
+            encoded_values[ecotouch_tag] = "2"
+
+    def _decode_heat_mode(self, str_vals: List[str], *other_args):  # pylint: disable=unused-argument
+        assert len(self.tags) == 1
+        intVal = int(str_vals[0])
+        if intVal >= 0 and intVal <= len(HEATING_MODES):
+            return HEATING_MODES[intVal]
+        else:
+            return "Error"
+
+    def _encode_heat_mode(self, value, encoded_values):
+        assert len(self.tags) == 1
+        ecotouch_tag = self.tags[0]
+        assert ecotouch_tag[0] in ["I"]
+        index = self._get_key_from_value(HEATING_MODES, value)
+        if index is not None:
+            encoded_values[ecotouch_tag] = str(index)
+
+    @staticmethod
+    def _get_key_from_value(a_dict: dict, value_to_find):
+        # a very simple "find first key" of dict method...
+        keys = [k for k, v in a_dict.items() if v == value_to_find]
+        if keys:
+            return keys[0]
+        return None
+
+    def _decode_ro_status(self, str_vals: List[str], *other_args):  # pylint: disable=unused-argument
+        assert len(self.tags) == 1
+        if str_vals[0] == "0":
+            return "off"
+        elif str_vals[0] == "1":
+            return "on"
+        elif str_vals[0] == "2":
+            return "disabled"
+        else:
+            return "Error"
+
+    def _encode_ro_status(self, value, encoded_values):
+        assert len(self.tags) == 1
+        ecotouch_tag = self.tags[0]
+        assert ecotouch_tag[0] in ["I"]
+        if value == "off":
+            encoded_values[ecotouch_tag] = "0"
+        elif value == "on":
+            encoded_values[ecotouch_tag] = "1"
+        elif value == "disabled":
+            encoded_values[ecotouch_tag] = "2"
+
+    def _decode_ro_series(self, str_vals: List[str], *other_args):  # pylint: disable=unused-argument
+        return SERIES[int(str_vals[0])] if str_vals[0] else ""
+
+    def _decode_ro_id(self, str_vals: List[str], *other_args):  # pylint: disable=unused-argument
+        assert len(self.tags) == 1
+        return SYSTEM_IDS[int(str_vals[0])] if str_vals[0] else ""
+
+    def _decode_ro_bios(self, str_vals: List[str], *other_args):  # pylint: disable=unused-argument
+        assert len(self.tags) == 1
+        str_val = str_vals[0]
+        return f"{str_val[:-2]}.{str_val[-2:]}"
+
+    def _decode_ro_fw(self, str_vals: List[str], *other_args):  # pylint: disable=unused-argument
+        assert len(self.tags) == 2
+        str_val1 = str_vals[0]
+        str_val2 = str_vals[1]
+        # str fw2 = f"{str_val1[:-4]:0>2}.{str_val1[-4:-2]}.{str_val1[-2:]}"
+        return f"0{str_val1[0]}.{str_val1[1:3]}.{str_val1[3:]}-{str_val2}"
+
+    def _decode_ro_sn(self, str_vals: List[str], *other_args):  # pylint: disable=unused-argument
+        assert len(self.tags) == 2
+        sn1 = int(str_vals[0])
+        sn2 = int(str_vals[1])
+        s1 = "WE" if math.floor(sn1 / 1000) > 0 else "00"  # pylint: disable=invalid-name
+        s2 = (sn1 - 1000 if math.floor(sn1 / 1000) > 0 else sn1)  # pylint: disable=invalid-name
+        s2 = "0" + str(s2) if s2 < 10 else s2  # pylint: disable=invalid-name
+        return str(s1) + str(s2) + str(sn2)
+
+    def _decode_year(self, str_vals: List[str], *other_args):  # pylint: disable=unused-argument
+        assert len(self.tags) == 1
+        return int(str_vals[0]) + 2000
+
+    tags: Collection[str]
+    unit: str = None
+    writeable: bool = False
+    decode_function: Callable = _decode_value_default
+    encode_function: Callable = _encode_value_default
+    bit: int = None
+    bits: [int] = None
+    translate: bool = False
 
 
 class EcotouchTag(TagData, Enum):  # pylint: disable=function-redefined
@@ -393,7 +607,7 @@ class EcotouchTag(TagData, Enum):  # pylint: disable=function-redefined
 
     # we do not have any valid information about the meaning after the bit=8...
     # https://github.com/flautze/home_assistant_waterkotte/issues/1#issuecomment-1916288553
-    #ALARM_BITS = TagData(["I52"], bits=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], translate=True)
+    # ALARM_BITS = TagData(["I52"], bits=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], translate=True)
     ALARM_BITS = TagData(["I52"], bits=[0, 1, 2, 3, 4, 5, 6, 7, 8], translate=True)
     INTERRUPTION_BITS = TagData(["I53"], bits=[0, 1, 2, 3, 4, 5, 6], translate=True)
 
@@ -500,299 +714,3 @@ class EcotouchTag(TagData, Enum):  # pylint: disable=function-redefined
 
     def __hash__(self) -> int:
         return hash(self.name)
-
-
-#
-# Class to control Waterkotte Ecotouch heatpumps.
-#
-class EcotouchBridge:
-    """Ecotouch Class"""
-
-    auth_cookies = None
-
-    def __init__(self, host, tagsPerRequest: int = 10, lang: str = "en"):
-        self.hostname = host
-        self.username = "waterkotte"
-        self.password = "waterkotte"
-        self.tagsPerRequest = min(tagsPerRequest, 75)
-        self.lang_map = None
-
-        if lang in TRANSLATIONS:
-           self.lang_map = TRANSLATIONS[lang]
-        else:
-           self.lang_map = TRANSLATIONS["en"]
-
-    # extracts statuscode from response
-    def get_status_response(self, r):  # pylint: disable=invalid-name
-        """get_status_response"""
-        match = re.search(r"^#([A-Z_]+)", r, re.MULTILINE)
-        if match is None:
-            raise InvalidResponseException("Invalid reply. Status could not be parsed")
-        return match.group(1)
-
-    # performs a login. Has to be called before any other method.
-    async def login(self, username="waterkotte", password="waterkotte"):
-        """Login to Heat Pump"""
-        _LOGGER.info(f"login to waterkotte host {self.hostname}")
-        args = {"username": username, "password": password}
-        self.username = username
-        self.password = password
-        async with aiohttp.ClientSession() as session:
-            response = await session.get(f"http://{self.hostname}/cgi/login", params=args)
-            async with response:
-                assert response.status == 200
-                content = await response.text()
-
-                tc = content.replace('\n', '<nl>')
-                tc = tc.replace('\r', '<cr>')
-                _LOGGER.info(f"LOGIN status:{response.status} response: {tc}")
-
-                parsed_response = self.get_status_response(content)
-                if parsed_response != "S_OK":
-                    if parsed_response.startswith("E_TOO_MANY_USERS"):
-                        raise TooManyUsersException("TOO_MANY_USERS")
-                    else:
-                        raise StatusException(f"Error while LOGIN: status: {parsed_response}")
-                self.auth_cookies = response.cookies
-
-    async def logout(self):
-        """Logout function"""
-        async with aiohttp.ClientSession() as session:
-            response = await session.get(f"http://{self.hostname}/cgi/logout")
-            async with response:
-                content = await response.text()
-                # tc = content.replace("\n", "<nl>").replace("\r", "<cr>")
-                _LOGGER.info(f"LOGOUT status:{response.status} content: {content}")
-                self.auth_cookies = None
-
-    async def read_value(self, tag: EcotouchTag):
-        """Read a value from Tag"""
-        res = await self.read_values([tag])
-        if tag in res:
-            return res[tag]
-        return None
-
-    async def read_values(self, tags: Sequence[EcotouchTag]):
-        """Async read values"""
-        # create flat list of ecotouch tags to be read
-        e_tags = list(set([etag for tag in tags for etag in tag.tags]))
-        e_values, e_status = await self._read_tags(e_tags)
-
-        result = {}
-        if e_values is not None and len(e_values) > 0:
-            for a_eco_tag in tags:
-                try:
-                    t_values = [e_values[a_tag] for a_tag in a_eco_tag.tags]
-                    t_states = [e_status[a_tag] for a_tag in a_eco_tag.tags]
-                    result[a_eco_tag] = {
-                        "value": a_eco_tag.decode_function(a_eco_tag, t_values),
-                        "status": t_states[0]
-                    }
-
-                    if a_eco_tag.translate and a_eco_tag.tags[0] in self.lang_map:
-                        value_map = self.lang_map[a_eco_tag.tags[0]]
-                        final_value = ""
-                        temp_values = result[a_eco_tag]["value"]
-                        for idx in range(len(temp_values)):
-                            if temp_values[idx]:
-                                final_value = final_value + ", " + str(value_map[idx])
-
-                        # we need to trim the firsts initial added ', '
-                        if len(final_value)>0:
-                            final_value = final_value[2:]
-
-                        result[a_eco_tag]["value"] = final_value
-
-                except KeyError:
-                    _LOGGER.warning(
-                        f"Key Error while read_values. EcoTag: {a_eco_tag} vals: {t_values} states: {t_states}")
-                except Exception as other_exc:
-                    _LOGGER.error(
-                        f"Exception {other_exc} while read_values. EcoTag: {a_eco_tag} vals: {t_values} states: {t_states}",
-                        other_exc
-                    )
-
-        return result
-
-    #
-    # reads a list of ecotouch tags
-    #
-    # self, tags: Sequence[EcotouchTag], results={}, results_status={}
-    async def _read_tags(self, tags: Sequence[EcotouchTag], results=None, results_status=None):
-        """async read tags"""
-        # _LOGGER.warning(tags)
-        if results is None:
-            results = {}
-        if results_status is None:
-            results_status = {}
-
-        while len(tags) > self.tagsPerRequest:
-            results, results_status = await self._read_tags(tags[:self.tagsPerRequest], results, results_status)
-            tags = tags[self.tagsPerRequest:]
-
-        args = {}
-        args["n"] = len(tags)
-        for i in range(len(tags)):
-            args[f"t{(i + 1)}"] = tags[i]
-
-        # also the readTags have a timestamp in each request...
-        args["_"] = str(int(round(datetime.now().timestamp() * 1000)))
-
-        _LOGGER.info(f"going to request {args['n']} tags in a single call from waterkotte@{self.hostname}")
-        async with aiohttp.ClientSession(cookies=self.auth_cookies) as session:
-            async with session.get(f"http://{self.hostname}/cgi/readTags", params=args) as resp:
-                _LOGGER.debug(f"requested: {resp.url}")
-                response = await resp.text()
-                if response.startswith("#E_NEED_LOGIN"):
-                    try:
-                        await self.login(self.username, self.password)
-                        return await self._read_tags(tags=tags, results=results, results_status=results_status)
-                    except StatusException as status_exec:
-                        _LOGGER.warning(f"StatusException (_read_tags) while trying to login: {status_exec}")
-                        return None, None
-
-                if response.startswith("#E_TOO_MANY_USERS"):
-                    return None
-
-                for tag in tags:
-                    match = re.search(
-                        rf"#{tag}\t(?P<status>[A-Z_]+)\n\d+\t(?P<value>\-?\d+)",
-                        response,
-                        re.MULTILINE,
-                    )
-                    if match is None:
-                        match = re.search(
-                            rf"#{tag}\tE_INACTIVETAG",
-                            response,
-                            re.MULTILINE,
-                        )
-                        # val_status = "E_INACTIVE"  # pylint: disable=possibly-unused-variable
-                        if match is None:
-                            # raise Exception(tag + " tag not found in response")
-                            _LOGGER.warning("Tag: %s not found in response!", tag)
-                            results_status[tag] = "E_NOTFOUND"
-                        else:
-                            # if val_status == "E_INACTIVE":
-                            results_status[tag] = "E_INACTIVE"
-
-                        results[tag] = None
-                    else:
-                        # results_status[tag] = "S_OK"
-                        results_status[tag] = match.group("status")
-                        results[tag] = match.group("value")
-
-        return results, results_status
-
-    async def write_value(self, tag, value):
-        """Write a value"""
-        return await self.write_values([(tag, value)])
-
-    async def write_values(self, kv_pairs: Collection[Tuple[EcotouchTag, Any]]):
-        """Write values to Tag"""
-        to_write = {}
-        result = {}
-        # we write only one EcotouchTag at the same time (but the EcotouchTag can consist of
-        # multiple internal tag fields)
-        for a_eco_tag, value in kv_pairs:  # pylint: disable=invalid-name
-            if not a_eco_tag.writeable:
-                raise InvalidValueException("tried to write to an readonly field")
-
-            # converting the HA values to the final int or bools that the waterkotte understand
-            a_eco_tag.encode_function(a_eco_tag, value, to_write)
-
-            e_values, e_status = await self._write_tags(to_write.keys(), to_write.values())
-
-            if e_values is not None and len(e_values) > 0:
-                _LOGGER.info(
-                    f"after _encode_tags of EcotouchTag {a_eco_tag} > raw-values: {e_values} states: {e_status}")
-
-                all_ok = True
-                for a_tag in e_status:
-                    if e_status[a_tag] != "S_OK":
-                        all_ok = False
-
-                if all_ok:
-                    str_vals = [e_values[a_tag] for a_tag in a_eco_tag.tags]
-                    val = a_eco_tag.decode_function(a_eco_tag, str_vals)
-                    if str(val) != str(value):
-                        _LOGGER.error(
-                            f"WRITE value does not match value that was READ: '{val}' (read) != '{value}' (write)")
-                    else:
-                        result[a_eco_tag] = {
-                            "value": val,
-                            # here we also take just the first status...
-                            "status": e_status[a_eco_tag.tags[0]]
-                        }
-        return result
-
-    #
-    # writes <value> into the tag <tag>
-    #
-    async def _write_tags(self, tags: List[str], value: List[Any]):
-        """write tag"""
-        args = {}
-        args["n"] = len(tags)
-        args["returnValue"] = "true"
-        args["rnd"] = str(int(round(datetime.now().timestamp() * 1000)))  # str(datetime.timestamp(datetime.now()))
-        # for i in range(len(tags)):
-        #    args[f"t{(i + 1)}"] = tags[i]
-        # for i in range(len(tag.tags)):
-        #     et_values[tag.tags[i]] = vals[i]
-        for i, tag in enumerate(tags):
-            args[f"t{i + 1}"] = tag
-            args[f"v{i + 1}"] = list(value)[i]
-
-        # args = {
-        #     "n": 1,
-        #     "returnValue": "true",
-        #     "t1": tag,
-        #     "v1": value,
-        #     'rnd': str(datetime.timestamp(datetime.now()))
-        # }
-        # result = {}
-        results = {}
-        results_status = {}
-        # _LOGGER.info(f"requesting '{args}' [tags: {tags}, values: {value}]")
-
-        async with aiohttp.ClientSession(cookies=self.auth_cookies) as session:
-            async with session.get(f"http://{self.hostname}/cgi/writeTags", params=args) as resp:
-                response = await resp.text()  # pylint: disable=invalid-name
-                if response.startswith("#E_NEED_LOGIN"):
-                    try:
-                        await self.login(self.username, self.password)
-                        return await self._write_tags(tags=tags, value=value)
-                    except StatusException as status_exec:
-                        _LOGGER.warning(f"StatusException (_write_tags) while trying to login: {status_exec}")
-                        return None
-                if response.startswith("#E_TOO_MANY_USERS"):
-                    return None
-
-                ###
-                for tag in tags:
-                    match = re.search(
-                        rf"#{tag}\t(?P<status>[A-Z_]+)\n\d+\t(?P<value>\-?\d+)",
-                        response,
-                        re.MULTILINE
-                    )
-                    if match is None:
-                        match = re.search(
-                            rf"#{tag}\tE_INACTIVETAG",
-                            response,
-                            re.MULTILINE
-                        )
-                        # val_status = "E_INACTIVE"  # pylint: disable=possibly-unused-variable
-                        if match is None:
-                            # raise Exception(tag + " tag not found in response")
-                            _LOGGER.warning("Tag: %s not found in response!", tag)
-                            results_status[tag] = "E_NOTFOUND"
-                        else:
-                            # if val_status == "E_INACTIVE":
-                            results_status[tag] = "E_INACTIVE"
-
-                        results[tag] = None
-                    else:
-                        # results_status[tag] = "S_OK"
-                        results_status[tag] = match.group("status")
-                        results[tag] = match.group("value")
-
-            return results, results_status
