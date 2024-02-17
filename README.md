@@ -1,6 +1,6 @@
 # Home Assistant Integration for Waterkotte Heatpumps [+2020]
 
-![logo](https://github.com/marq24/ha-waterkotte/raw/master/logo.png)
+![logo](https://github.com/marq24/ha-waterkotte/raw/main/logo.png)
 
 This Home Assistant Integration is providing information from the German heatpump pioneer Waterkotte. In addition and where possible functions are provided to control the system.
 
@@ -25,9 +25,9 @@ Please be aware, that we are developing this integration to best of our knowledg
 
 ## What you get [2024.02.15]
 
-[![sampleview](https://github.com/marq24/ha-waterkotte/raw/master/sample-view-s.png)](https://github.com/marq24/ha-waterkotte/raw/master/sample-view.png)
+[![sampleview](https://github.com/marq24/ha-waterkotte/raw/main/sample-view-s.png)](https://github.com/marq24/ha-waterkotte/raw/main/sample-view.png)
 
-[[Get the sources for the sample dashboard_above](https://github.com/marq24/ha-waterkotte/blob/master/sample-view.yaml)]
+[[Get the sources for the sample dashboard_above](https://github.com/marq24/ha-waterkotte/blob/main/sample-view.yaml)]
 
 ## Installation
 
