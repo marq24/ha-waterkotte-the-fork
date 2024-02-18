@@ -1,6 +1,3 @@
-"""
-Custom integration to integrate Waterkotte Heatpump with Home Assistant.
-"""
 import asyncio
 import logging
 import json
@@ -15,17 +12,16 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.entity import Entity, EntityDescription
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.helpers.update_coordinator import UpdateFailed
-from homeassistant.helpers import entity_registry as EntityReg
+from homeassistant.helpers import config_validation as config_val, entity_registry as entity_reg
 
 from .const import (
-    CONF_IP, CONF_BIOS, CONF_FW, CONF_SERIAL, CONF_SERIES, CONF_ID,
-    CONF_HOST,
+    CONF_HOST, CONF_IP, CONF_BIOS, CONF_FW, CONF_SERIAL, CONF_SERIES, CONF_ID,
     CONF_POLLING_INTERVAL,
     CONF_TAGS_PER_REQUEST,
     CONF_SYSTEMTYPE,
+    NAME,
     DOMAIN,
     PLATFORMS,
-    NAME,
     STARTUP_MESSAGE,
     SERVICE_SET_HOLIDAY,
     SERVICE_SET_DISINFECTION_START_TIME,
@@ -39,7 +35,7 @@ from custom_components.waterkotte_heatpump.pywaterkotte_ha import WaterkotteClie
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 SCAN_INTERVAL = timedelta(seconds=60)
-tags = []
+CONFIG_SCHEMA = config_val.removed(DOMAIN, raise_if_present=False)
 
 
 async def async_setup(hass: HomeAssistant, config: Config):  # pylint: disable=unused-argument
@@ -124,12 +120,12 @@ def generate_tag_list(hass: HomeAssistant, config_entry_id: str) -> List[Ecotouc
     _LOGGER.info(f"(re)build tag list...")
     tags = []
     if hass is not None:
-        a_entity_reg = EntityReg.async_get(hass)
+        a_entity_reg = entity_reg.async_get(hass)
         if a_entity_reg is not None:
             # we query from the HA entity registry all entities that are created by this
             # 'config_entry' -> we use here just default api calls [no more hacks!]
-            for entity in EntityReg.async_entries_for_config_entry(registry=a_entity_reg,
-                                                                   config_entry_id=config_entry_id):
+            for entity in entity_reg.async_entries_for_config_entry(registry=a_entity_reg,
+                                                                    config_entry_id=config_entry_id):
                 if entity.disabled is False:
                     a_temp_tag = (entity.unique_id)
                     _LOGGER.info(f"found active entity: {entity.entity_id} using Tag: {a_temp_tag.upper()}")
@@ -146,15 +142,15 @@ class WKHPDataUpdateCoordinator(DataUpdateCoordinator):
         self.name = config_entry.title
         self._config_entry = config_entry
         self._host = config_entry.options.get(CONF_HOST, config_entry.data[CONF_HOST])
-        system_type = config_entry.options.get(CONF_SYSTEMTYPE, config_entry.data.get(CONF_SYSTEMTYPE))
-        tags_per_request = config_entry.options.get(CONF_TAGS_PER_REQUEST,
-                                                    config_entry.data.get(CONF_TAGS_PER_REQUEST, 10))
+        loc_system_type = config_entry.options.get(CONF_SYSTEMTYPE, config_entry.data.get(CONF_SYSTEMTYPE))
+        loc_tags_per_request = config_entry.options.get(CONF_TAGS_PER_REQUEST,
+                                                        config_entry.data.get(CONF_TAGS_PER_REQUEST, 10))
 
-        tags = generate_tag_list(hass=hass, config_entry_id=config_entry.entry_id)
+        loc_tags = generate_tag_list(hass=hass, config_entry_id=config_entry.entry_id)
 
-        self.bridge = WaterkotteClient(host=self._host, system_type=system_type,
-                                       web_session=async_get_clientsession(hass), tags=tags,
-                                       tags_per_request=tags_per_request, lang=hass.config.language.lower())
+        self.bridge = WaterkotteClient(host=self._host, system_type=loc_system_type,
+                                       web_session=async_get_clientsession(hass), tags=loc_tags,
+                                       tags_per_request=loc_tags_per_request, lang=hass.config.language.lower())
 
         global SCAN_INTERVAL
         # update_interval can be adjusted in the options (not for WebAPI)
