@@ -4,11 +4,12 @@ This version of the integration will not be continued - after I have completed t
 
 ## How to migrate - the update path
 1. make a backup
-2. uninstall the current waterkotte integration
-3. remove the current custom hacs repositoy 'https://github.com/marq24/ha-waterkotte'
-4. add the __new__ repository 'https://github.com/marq24/ha-waterkotte' to hacs
-5. install the integration
-6. add your waterkotte
+2. go to hacs menu of your home assistant installation
+3. remove the custom hacs repository 'https://github.com/marq24/ha-waterkotte'
+4. this step will/should remove the Waterkotte Integration from the HACS Integration entries
+5. add the __new__ repository 'https://github.com/marq24/ha-waterkotte' to hacs
+6. install the waterkotte integration to hacs
+7. restart your system
 
 YES - this procedure sounds *totally* silly - but hacs stores a custom-id for each repository - I have decided to rename the repository which base on the work from pattisonmichael to 'https://github.com/marq24/ha-waterkotte-the-fork' and created an independent repository.
 
