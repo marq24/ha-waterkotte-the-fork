@@ -1,3 +1,17 @@
+# - This version is deprecated -
+
+This version of the integration will not be continued - after I have completed the refactoring process I have decided to create an independent repository - since the refactored build does not have anything in common with the origin sources.
+
+## How to migrate - the update path
+1. make a backup
+2. uninstall the current waterkotte integration
+3. remove the current custom hacs repositoy 'https://github.com/marq24/ha-waterkotte'
+4. add the __new__ repository 'https://github.com/marq24/ha-waterkotte' to hacs
+5. install the integration
+6. add your waterkotte
+
+YES - this procedure sounds *totally* silly - but hacs stores a custom-id for each repository - I have decided to rename the repository which base on the work from pattisonmichael to 'https://github.com/marq24/ha-waterkotte-the-fork' and created an independent repository.
+
 # Home Assistant Integration for Waterkotte Heatpumps [+2020]
 
 ![logo](https://github.com/marq24/ha-waterkotte/raw/main/logo.png)
