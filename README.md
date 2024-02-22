@@ -1,17 +1,22 @@
 # - This version is deprecated -
 
-This version of the integration will not be continued - after I have completed the refactoring process I have decided to create an independent repository - since the refactored build does not have anything in common with the origin sources.
+## Migration Guide
 
-## How to migrate - the update path
-1. make a backup
-2. go to hacs menu of your home assistant installation
-3. remove the custom hacs repository 'https://github.com/marq24/ha-waterkotte'
-4. this step will/should remove the Waterkotte Integration from the HACS Integration entries
-5. add the __new__ repository 'https://github.com/marq24/ha-waterkotte' to hacs
-6. install the waterkotte integration to hacs
-7. restart your system
+The old `ha-waterkotte` repository is deprecated and have now been renamed to `ha-waterkotte-the-fork`. After the refactoring process have been completed, I have decided to create an independent repository - since the refactored version does not have much in common with the origin sources.
 
-YES - this procedure sounds *totally* silly - but hacs stores a custom-id for each repository - I have decided to rename the repository which base on the work from pattisonmichael to 'https://github.com/marq24/ha-waterkotte-the-fork' and created an independent repository.
+Unfortunately HACS does not 'like' renaming of repositories, so you have to perform few steps in order to upgrade your home assistant installation to the latest ha-waterkotte integration version - sorry for this inconvenience!
+
+### How to migrate to the new version of the integration
+1. make a backup (just in case)
+2. go to HACS menu of your home assistant installation
+3. remove the (old) custom HACS repository 'https://github.com/marq24/ha-waterkotte'
+
+   (This step will/should remove the Waterkotte Integration entry from the list of installed HACS Integrations)
+5. add the __new__ repository 'https://github.com/marq24/ha-waterkotte' to HACS
+6. install the waterkotte integration to your local HACS
+7. restart your home assistant system
+
+YES - this procedure sounds *totally* silly - but HACS stores a custom-id for each repository - And since I have decided to rename the old repository which base on the work from pattisonmichael to 'https://github.com/marq24/ha-waterkotte-the-fork' and created an independent repository, this procedure is necessary in order to be notified about any future updates.
 
 # Home Assistant Integration for Waterkotte Heatpumps [+2020]
 
